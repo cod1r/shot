@@ -1,0 +1,3 @@
+# Slut
+
+- simple fuzzy finder
