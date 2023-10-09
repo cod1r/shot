@@ -129,8 +129,7 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
       written[length]=0;
       char *sorted;
       sort_on_edit_dist(&sorted, written, length, split_on_newlines, split_on_newlines_length);
-      fprintf(stderr, "\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
-      //fprintf(stderr, "\033[1K\r%s\0337\n-----------------------------\033[2A\0338", written);
+      fprintf(stderr, "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
     }
   }
 }
@@ -154,11 +153,13 @@ int main()
     }
   }
   input_buffer[input_buffer_length]=0;
-  int newlines=input_buffer[input_buffer_length-1]=='\n'?0:1;
+  int newlines=0;
   for(int idx=0;idx<input_buffer_length;++idx){
     if(input_buffer[idx]=='\n')
       newlines+=1;
   }
+  if(input_buffer[input_buffer_length]=='\n')
+    newlines--;
   char **split_on_newlines=malloc(newlines * sizeof(char*));
   int last_newline_idx_plus_1=0;
   for(int idx=0;idx<newlines;++idx){
@@ -167,13 +168,13 @@ int main()
       next_newline_idx<input_buffer_length)
       ++next_newline_idx;
     int size=next_newline_idx-last_newline_idx_plus_1;
-    split_on_newlines[idx]=malloc(size);
-    split_on_newlines[size-1]=0;
+    split_on_newlines[idx]=malloc(size+1);
     strncpy(
       split_on_newlines[idx],
       input_buffer+last_newline_idx_plus_1,
       size
     );
+    split_on_newlines[idx][size]=0;
     last_newline_idx_plus_1=next_newline_idx+1;
   }
   sex(split_on_newlines, newlines);
