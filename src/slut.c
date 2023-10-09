@@ -3,9 +3,58 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+void process(const char *written, int *written_length, const char *const*const split_on_newlines)
+{
+  int not_ignored_character_count = 0;
+  int new_length = 0;
+  for(int idx=0;idx<*written_length;++idx){
+    if(written[idx]!=127){
+      ++new_length;
+    }else{
+      --new_length;
+    }
+  }
+  *written_length=new_length;
+}
 void sex(char **split_on_newlines, int split_on_newlines_length)
 {
-  struct termios *term_settings;
+  struct termios term_settings;
+  if (tcgetattr(STDOUT_FILENO, &term_settings) == -1){
+    fprintf(stderr, "tcgetattr failed on stdout\n");
+    exit(EXIT_FAILURE);
+  }
+  term_settings.c_lflag &= ~ICANON;
+  term_settings.c_lflag &= ~ECHO;
+  term_settings.c_cc[VMIN] = 0;
+  term_settings.c_cc[VTIME] = 1;
+  if (tcsetattr(STDOUT_FILENO, TCSANOW, &term_settings) == -1){
+    fprintf(stderr, "tcsetattr_new failed on stdout\n");
+    exit(EXIT_FAILURE);
+  }
+  int capacity=65535;
+  int length=0;
+  char *written=malloc(capacity);
+  while (1){
+    int r=read(STDOUT_FILENO, written+length, capacity-length);
+    written[r+length]=0;
+    if (r==0){
+    }else{
+      length+=r;
+      if (length==capacity){
+        char *temp=malloc(capacity*=2);
+        for(int idx=0;idx<length;++idx)
+          temp[idx]=written[idx];
+        free(written);
+        written=temp;
+      }
+      process(written, &length, split_on_newlines);
+      written[length]=0;
+      fprintf(stderr, "\033[1K\033[0E%s", written);
+    }
+  }
 }
 int main()
 {
