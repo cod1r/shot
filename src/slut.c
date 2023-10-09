@@ -23,23 +23,23 @@ int levenshtein_dist(char *one, int one_length, char *two, int two_length)
 {
   int table_row_length = one_length+1;
   int table_col_length = two_length+1;
-  int **table=malloc(table_row_length);
+  int **table=malloc(table_row_length * sizeof(int*));
   for(int i=0;i<table_row_length;++i){
-    table[i]=malloc(table_col_length);
-    for(int j=0;j<two_length;++j){
+    table[i]=malloc(table_col_length * sizeof(int));
+    for(int j=0;j<table_col_length;++j){
       table[i][j]=0;
     }
   }
-  for(int i=0;i<table_row_length;++i){
-    table[i][0]=1;
-  }
-  for(int i=0;i<table_col_length;++i){
-    table[0][i]=1;
-  }
   table[0][0]=0;
-  for(int i=1;i<table_row_length;){
-    for(int j=1;j<table_col_length;){
-      if(one[i]==two[i]){
+  for(int i=1;i<table_row_length;++i){
+    table[i][0]=table[i-1][0] + 1;
+  }
+  for(int i=1;i<table_col_length;++i){
+    table[0][i]=table[0][i-1] + 1;
+  }
+  for(int i=1;i<table_row_length;++i){
+    for(int j=1;j<table_col_length;++j){
+      if(one[i-1]==two[i-1]){
         table[i][j]=table[i-1][j-1];
       }else{
         table[i][j]=min(table[i][j-1], min(table[i-1][j], table[i-1][j-1])) + 1;
@@ -48,17 +48,19 @@ int levenshtein_dist(char *one, int one_length, char *two, int two_length)
   }
   return table[one_length][two_length];
 }
-void sort_on_edit_dist(char *sorted, char *written, int written_length, char **split_on_newlines, int split_on_newlines_length)
+void sort_on_edit_dist(char **sorted_p, char *written, int written_length, char **split_on_newlines, int split_on_newlines_length)
 {
   int length_of_sorted = split_on_newlines_length;
   for(int idx=0;idx<split_on_newlines_length;++idx){
     length_of_sorted+=strlen(split_on_newlines[idx]);
   }
-  sorted=malloc(length_of_sorted);
+  *sorted_p=malloc(length_of_sorted);
+  char *sorted = *sorted_p;
   sorted[length_of_sorted]=0;
-  int *indices=malloc(split_on_newlines_length);
+  int *indices=malloc(split_on_newlines_length * sizeof(int));
   for(int i=0;i<split_on_newlines_length;++i)
     indices[i]=i;
+  //insertion sort
   for(int i=0;i<split_on_newlines_length-1;++i){
     int j = i + 1;
     int edit_dist_one = levenshtein_dist(split_on_newlines[j-1],
@@ -126,8 +128,9 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
       process(written, &length);
       written[length]=0;
       char *sorted;
-      sort_on_edit_dist(sorted, written, length, split_on_newlines, split_on_newlines_length);
+      sort_on_edit_dist(&sorted, written, length, split_on_newlines, split_on_newlines_length);
       fprintf(stderr, "\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
+      //fprintf(stderr, "\033[1K\r%s\0337\n-----------------------------\033[2A\0338", written);
     }
   }
 }
@@ -135,7 +138,7 @@ int main()
 {
   int input_buffer_capacity = 65535;
   int input_buffer_length = 0;
-  char *input_buffer = malloc(input_buffer_length);
+  char *input_buffer = malloc(input_buffer_capacity);
   int bytes_read;
   while((bytes_read=read(STDIN_FILENO,
     input_buffer + input_buffer_length,
@@ -156,22 +159,22 @@ int main()
     if(input_buffer[idx]=='\n')
       newlines+=1;
   }
-  char **split_on_newlines=malloc(newlines);
-  int last_newline_idx=0;
+  char **split_on_newlines=malloc(newlines * sizeof(char*));
+  int last_newline_idx_plus_1=0;
   for(int idx=0;idx<newlines;++idx){
-    int next_newline_idx=last_newline_idx+1;
+    int next_newline_idx=last_newline_idx_plus_1+1;
     while(input_buffer[next_newline_idx]!='\n' &&
       next_newline_idx<input_buffer_length)
       ++next_newline_idx;
-    int size=next_newline_idx-last_newline_idx;
+    int size=next_newline_idx-last_newline_idx_plus_1;
     split_on_newlines[idx]=malloc(size);
-    split_on_newlines[size]=0;
+    split_on_newlines[size-1]=0;
     strncpy(
       split_on_newlines[idx],
-      input_buffer+last_newline_idx,
+      input_buffer+last_newline_idx_plus_1,
       size
     );
-    last_newline_idx=next_newline_idx+1;
+    last_newline_idx_plus_1=next_newline_idx+1;
   }
   sex(split_on_newlines, newlines);
 }
