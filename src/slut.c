@@ -61,7 +61,6 @@ void sort_on_edit_dist(char **sorted_p, char *written, int written_length, char 
   }
   *sorted_p=malloc(length_of_sorted);
   char *sorted = *sorted_p;
-  sorted[length_of_sorted]=0;
   int *indices=malloc(split_on_newlines_length * sizeof(int));
   for(int i=0;i<split_on_newlines_length;++i){
     indices[i]=i;
@@ -116,6 +115,8 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
     written[r+length]=0;
     for(int idx=length;idx<length+r;){
       if(written[idx]=='\n'||written[idx]=='\t'||written[idx]=='\v'||written[idx]=='\f'){
+        if(written[idx]=='\t')
+          tab_index=(tab_index+1)%split_on_newlines_length;
         for(int idx2=idx;idx2<length+r-1;++idx2){
           written[idx2]=written[idx2+1];
         }
