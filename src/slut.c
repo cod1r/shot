@@ -82,8 +82,8 @@ void sort_on_edit_dist(char **sorted_p, char *written, int written_length, char 
   int currn_idx=0;
   for(int idx=0;idx<split_on_newlines_length;++idx){
     if (idx == tab_index){
-      sorted[currn_idx]=" ";
-      sorted[currn_idx+1]=">";
+      sorted[currn_idx]=' ';
+      sorted[currn_idx+1]='>';
       currn_idx+=2;
     }
     strncpy(sorted+currn_idx, split_on_newlines[indices[idx]], strlen(split_on_newlines[indices[idx]]));
