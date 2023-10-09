@@ -3,21 +3,84 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-void process(const char *written, int *written_length, const char *const*const split_on_newlines)
+void process(char *written, int *written_length)
 {
-  int not_ignored_character_count = 0;
   int new_length = 0;
   for(int idx=0;idx<*written_length;++idx){
     if(written[idx]!=127){
       ++new_length;
     }else{
-      --new_length;
+      new_length = new_length - 1 >= 0 ? new_length - 1:0;
     }
   }
   *written_length=new_length;
+}
+int min(int a, int b)
+{
+  return a < b ? a:b;
+}
+int levenshtein_dist(char *one, int one_length, char *two, int two_length)
+{
+  int table_row_length = one_length+1;
+  int table_col_length = two_length+1;
+  int **table=malloc(table_row_length);
+  for(int i=0;i<table_row_length;++i){
+    table[i]=malloc(table_col_length);
+    for(int j=0;j<two_length;++j){
+      table[i][j]=0;
+    }
+  }
+  for(int i=0;i<table_row_length;++i){
+    table[i][0]=1;
+  }
+  for(int i=0;i<table_col_length;++i){
+    table[0][i]=1;
+  }
+  table[0][0]=0;
+  for(int i=1;i<table_row_length;){
+    for(int j=1;j<table_col_length;){
+      if(one[i]==two[i]){
+        table[i][j]=table[i-1][j-1];
+      }else{
+        table[i][j]=min(table[i][j-1], min(table[i-1][j], table[i-1][j-1])) + 1;
+      }
+    }
+  }
+  return table[one_length][two_length];
+}
+void sort_on_edit_dist(char *sorted, char *written, int written_length, char **split_on_newlines, int split_on_newlines_length)
+{
+  int length_of_sorted = split_on_newlines_length;
+  for(int idx=0;idx<split_on_newlines_length;++idx){
+    length_of_sorted+=strlen(split_on_newlines[idx]);
+  }
+  sorted=malloc(length_of_sorted);
+  sorted[length_of_sorted]=0;
+  int *indices=malloc(split_on_newlines_length);
+  for(int i=0;i<split_on_newlines_length;++i)
+    indices[i]=i;
+  for(int i=0;i<split_on_newlines_length-1;++i){
+    int j = i + 1;
+    int edit_dist_one = levenshtein_dist(split_on_newlines[j-1],
+      strlen(split_on_newlines[j-1]),
+      written, written_length);
+    int edit_dist_two = levenshtein_dist(split_on_newlines[j],
+      strlen(split_on_newlines[j]),
+      written, written_length);
+    while(edit_dist_one > edit_dist_two && j > 0){
+      int temp = indices[j];
+      indices[j] = indices[j-1];
+      indices[j-1]=temp;
+      --j;
+    }
+  }
+  int currn_idx=0;
+  for(int idx=0;idx<split_on_newlines_length;++idx){
+    strncpy(sorted+currn_idx, split_on_newlines[indices[idx]], strlen(split_on_newlines[indices[idx]]));
+    currn_idx+=strlen(split_on_newlines[indices[idx]]);
+    sorted[currn_idx]='\n';
+    currn_idx++;
+  }
 }
 void sex(char **split_on_newlines, int split_on_newlines_length)
 {
@@ -42,6 +105,16 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
     written[r+length]=0;
     if (r==0){
     }else{
+      for(int idx=length;idx<length+r;){
+        if(written[idx]=='\n'||written[idx]=='\t'||written[idx]=='\v'||written[idx]=='\f'){
+          for(int idx2=idx;idx2<length+r-1;++idx2){
+            written[idx2]=written[idx2+1];
+          }
+          --r;
+          continue;
+        }
+        ++idx;
+      }
       length+=r;
       if (length==capacity){
         char *temp=malloc(capacity*=2);
@@ -50,9 +123,11 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
         free(written);
         written=temp;
       }
-      process(written, &length, split_on_newlines);
+      process(written, &length);
       written[length]=0;
-      fprintf(stderr, "\033[1K\033[0E%s", written);
+      char *sorted;
+      sort_on_edit_dist(sorted, written, length, split_on_newlines, split_on_newlines_length);
+      fprintf(stderr, "\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
     }
   }
 }
