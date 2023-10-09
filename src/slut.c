@@ -104,11 +104,12 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
     fprintf(stderr, "tcsetattr_new failed on stdout\n");
     exit(EXIT_FAILURE);
   }
+  int tab_index = 0;
   int capacity=65535;
   int length=0;
   char *written=malloc(capacity);
-  char *sorted = malloc(1);
-  sorted[0]=0;
+  char *sorted;
+  sort_on_edit_dist(&sorted, written, length, split_on_newlines, split_on_newlines_length);
   fprintf(stderr, "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
   while (1){
     int r=read(STDOUT_FILENO, written+length, capacity-length);
