@@ -53,7 +53,7 @@ int levenshtein_dist(char *one, int one_length, char *two, int two_length)
   free(table);
   return answer;
 }
-void sort_on_edit_dist(char **sorted_p, char *written, int written_length, char **split_on_newlines, int split_on_newlines_length, int tab_index)
+void sort_on_edit_dist_output_to_sorted(char **sorted_p, char *written, int written_length, char **split_on_newlines, int split_on_newlines_length, int tab_index)
 {
   int length_of_sorted = split_on_newlines_length + strlen(" >");
   for(int idx=0;idx<split_on_newlines_length;++idx){
@@ -117,7 +117,7 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
   int length=0;
   char *written=malloc(capacity);
   char *sorted;
-  sort_on_edit_dist(&sorted, written, length, split_on_newlines, split_on_newlines_length, tab_index);
+  sort_on_edit_dist_output_to_sorted(&sorted, written, length, split_on_newlines, split_on_newlines_length, tab_index);
   fprintf(stderr, "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
   while (1){
     int r=read(STDIN_FILENO, written+length, capacity-length);
@@ -128,7 +128,25 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
           tab_index=(tab_index+1)%split_on_newlines_length;
         if(written[idx]=='\n')
         {
-          fprintf(stdout, "%s", split_on_newlines[tab_index]);
+          fprintf(stderr, "\r");
+          int current_line_in_sorted = 0;
+          int prev_newline_index = 0;
+          int end_of_result_idx = 0;
+          for(int i = 0; i < strlen(sorted); ++i){
+            if(sorted[i]=='\n'){
+              prev_newline_index=i;
+              current_line_in_sorted++;
+            }
+            if(current_line_in_sorted==tab_index){
+              break;
+            }
+          }
+          end_of_result_idx=prev_newline_index+1;
+          while(end_of_result_idx < strlen(sorted) && sorted[end_of_result_idx] != '\n'){
+            end_of_result_idx++;
+          }
+          sorted[end_of_result_idx]=0;
+          fprintf(stdout, "%s", sorted+prev_newline_index + 2 + (tab_index > 0 ? 1:0) /* adding 2 because of the ' >' and adding 1 because of the newline if tab_index is greater than 0 */);
           fflush(stdout);
           return;
         }
@@ -151,7 +169,7 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
     process(written, &length);
     written[length]=0;
     free(sorted);
-    sort_on_edit_dist(&sorted, written, length, split_on_newlines, split_on_newlines_length, tab_index);
+    sort_on_edit_dist_output_to_sorted(&sorted, written, length, split_on_newlines, split_on_newlines_length, tab_index);
     fprintf(stderr, "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
   }
 }
@@ -180,8 +198,6 @@ int main()
     if(input_buffer[idx]=='\n')
       newlines+=1;
   }
-  if(input_buffer[input_buffer_length]=='\n')
-    newlines--;
   char **split_on_newlines=malloc(newlines * sizeof(char*));
   int last_newline_idx_plus_1=0;
   for(int idx=0;idx<newlines;++idx){
