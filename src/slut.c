@@ -3,28 +3,27 @@
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
-void process(char **written_p, int *written_length) {
-  char *written = *written_p;
-  char *new_written = malloc(*written_length);
-  int new_written_length = 0;
-  for (int idx = 0; idx < *written_length; ++idx) {
-    if (written[idx] >= 32 && written[idx] <= 127) {
-      new_written[new_written_length++] = written[idx];
-    }
+void set_up_terminal() {
+  if (freopen("/dev/tty", "r", stdin) == NULL) {
+    fprintf(stderr, "freopen failed");
+    exit(EXIT_FAILURE);
   }
-  int new_length = 0;
-  for (int idx = 0; idx < new_written_length; ++idx) {
-    if (written[idx] != 127) {
-      ++new_length;
-    } else {
-      new_length = new_length - 1 >= 0 ? new_length - 1 : 0;
-    }
+  struct termios term_settings;
+  if (tcgetattr(STDIN_FILENO, &term_settings) == -1) {
+    fprintf(stderr, "tcgetattr failed on stdin\n");
+    exit(EXIT_FAILURE);
   }
-  free(*written_p);
-  *written_p = new_written;
-  *written_length = new_length;
+  term_settings.c_lflag &= ~ICANON;
+  term_settings.c_lflag &= ~ECHO;
+  term_settings.c_cc[VMIN] = 1;
+  term_settings.c_cc[VTIME] = 0;
+  if (tcsetattr(STDIN_FILENO, TCSANOW, &term_settings) == -1) {
+    fprintf(stderr, "tcsetattr_new failed on stdin\n");
+    exit(EXIT_FAILURE);
+  }
 }
 int min(int a, int b) { return a < b ? a : b; }
+int max(int a, int b) { return a > b ? a : b; }
 int levenshtein_dist(char *one, int one_length, char *two, int two_length) {
   int table_row_length = one_length + 1;
   int table_col_length = two_length + 1;
@@ -59,31 +58,13 @@ int levenshtein_dist(char *one, int one_length, char *two, int two_length) {
   free(table);
   return answer;
 }
-void sort_on_edit_dist_output_to_sorted(char **sorted_p, char *written,
-                                        int written_length,
-                                        char **split_on_newlines,
-                                        int split_on_newlines_length,
-                                        int tab_index) {
-  int length_of_sorted = split_on_newlines_length + strlen(" >");
-  for (int idx = 0; idx < split_on_newlines_length; ++idx) {
-    length_of_sorted += strlen(split_on_newlines[idx]);
-  }
-  *sorted_p = malloc(length_of_sorted);
-  char *sorted = *sorted_p;
-  int *indices = malloc(split_on_newlines_length * sizeof(int));
-  for (int i = 0; i < split_on_newlines_length; ++i) {
-    indices[i] = i;
-  }
+void sort_on_edit_dist_output_to_sorted(
+    char *sorted, char *written, int written_length, char **split_on_newlines,
+    int split_on_newlines_length, int *indices, int *distances, int tab_index) {
   // insertion sort
   for (int i = 0; i < split_on_newlines_length - 1; ++i) {
     int j = indices[i + 1];
-    while (levenshtein_dist(written, written_length,
-                            split_on_newlines[indices[j - 1]],
-                            strlen(split_on_newlines[indices[j - 1]])) >
-               levenshtein_dist(written, written_length,
-                                split_on_newlines[indices[j]],
-                                strlen(split_on_newlines[indices[j]])) &&
-           j > 0) {
+    while (distances[indices[j - 1]] > distances[indices[j]] && j > 0) {
       int temp = indices[j];
       indices[j] = indices[j - 1];
       indices[j - 1] = temp;
@@ -105,36 +86,72 @@ void sort_on_edit_dist_output_to_sorted(char **sorted_p, char *written,
   }
   sorted[currn_idx] = 0;
 }
+void process(char **written_p, int *written_length) {
+  char *written = *written_p;
+  char *new_written = malloc(*written_length);
+  int new_written_length = 0;
+  for (int idx = 0; idx < *written_length; ++idx) {
+    if (written[idx] >= 32 && written[idx] <= 127) {
+      new_written[new_written_length++] = written[idx];
+    }
+  }
+  int new_length = 0;
+  for (int idx = 0; idx < new_written_length; ++idx) {
+    if (new_written[idx] != 127) {
+      ++new_length;
+    } else {
+      new_length = max(0, new_length - 1);
+    }
+  }
+  for (int idx = 0; idx < new_length; ++idx) {
+    written[idx] = new_written[idx];
+  }
+  free(new_written);
+  *written_length = new_length;
+}
+char *format_str =
+    "\033[0J" // Clearing everything from cursing to the end of the screen
+    "\033[1K" // Erase start of line to cursor
+    "\r"      // Move cursor to start of line
+    "%s"      // search input
+    "\0337"   // Saving cursor position
+    "\n-----------------------------\n" // Separator
+    "%s"                                // Entries that were piped
+    "\033[%dA" // Moving cursor back to search input line
+    "\0338"    // Moving cursor back to saved position
+    ;
+void update_sort_print(char *sorted, char **split_on_newlines,
+                       int split_on_newlines_length, char *written,
+                       int written_length, int *indices, int *distances,
+                       int tab_index) {
+  for (int i = 0; i < split_on_newlines_length; ++i) {
+    indices[i] = i;
+    distances[i] =
+        levenshtein_dist(written, written_length, split_on_newlines[i],
+                         strlen(split_on_newlines[i]));
+  }
+  sort_on_edit_dist_output_to_sorted(
+      sorted, written, written_length, split_on_newlines,
+      split_on_newlines_length, indices, distances, tab_index);
+  dprintf(
+      STDERR_FILENO, format_str, written, sorted, split_on_newlines_length + 2 /* adding 2 because of the ' >' and adding 1 because of the newline if tab_index is greater than 0 */);
+}
 void sex(char **split_on_newlines, int split_on_newlines_length) {
-  if (freopen("/dev/tty", "r", stdin) == NULL) {
-    fprintf(stderr, "freopen failed");
-    exit(EXIT_FAILURE);
-  }
-  struct termios term_settings;
-  if (tcgetattr(STDIN_FILENO, &term_settings) == -1) {
-    fprintf(stderr, "tcgetattr failed on stdin\n");
-    exit(EXIT_FAILURE);
-  }
-  term_settings.c_lflag &= ~ICANON;
-  term_settings.c_lflag &= ~ECHO;
-  term_settings.c_cc[VMIN] = 1;
-  term_settings.c_cc[VTIME] = 0;
-  if (tcsetattr(STDIN_FILENO, TCSANOW, &term_settings) == -1) {
-    fprintf(stderr, "tcsetattr_new failed on stdin\n");
-    exit(EXIT_FAILURE);
+  set_up_terminal();
+  int length_of_sorted = split_on_newlines_length + strlen(" >");
+  for (int idx = 0; idx < split_on_newlines_length; ++idx) {
+    length_of_sorted += strlen(split_on_newlines[idx]);
   }
   int tab_index = 0;
   int capacity = 65535;
   int length = 0;
   char *written = malloc(capacity);
-  char *sorted;
-  sort_on_edit_dist_output_to_sorted(&sorted, written, length,
-                                     split_on_newlines,
-                                     split_on_newlines_length, tab_index);
-  dprintf(
-      STDERR_FILENO,
-      "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338",
-      written, sorted, split_on_newlines_length + 2);
+  written[0] = 0;
+  int *indices = malloc(split_on_newlines_length * sizeof(int));
+  int *distances = malloc(split_on_newlines_length * sizeof(int));
+  char *sorted = malloc(length_of_sorted);
+  update_sort_print(sorted, split_on_newlines, split_on_newlines_length,
+                    written, length, indices, distances, tab_index);
   while (1) {
     int r = read(STDIN_FILENO, written + length, capacity - length);
     written[r + length] = 0;
@@ -163,9 +180,8 @@ void sex(char **split_on_newlines, int split_on_newlines_length) {
             end_of_result_idx++;
           }
           sorted[end_of_result_idx] = 0;
-          dprintf(
-              STDOUT_FILENO,
-              "%s\n", sorted + prev_newline_index + 2 + (tab_index > 0 ? 1 : 0) /* adding 2 because of the ' >' and adding 1 because of the newline if tab_index is greater than 0 */);
+          dprintf(STDOUT_FILENO, "%s\n",
+                  sorted + prev_newline_index + 2 + (tab_index > 0 ? 1 : 0));
           return;
         }
         for (int idx2 = idx; idx2 < length + r - 1; ++idx2) {
@@ -186,14 +202,8 @@ void sex(char **split_on_newlines, int split_on_newlines_length) {
     }
     process(&written, &length);
     written[length] = 0;
-    free(sorted);
-    sort_on_edit_dist_output_to_sorted(&sorted, written, length,
-                                       split_on_newlines,
-                                       split_on_newlines_length, tab_index);
-    dprintf(STDERR_FILENO,
-            "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%"
-            "dA\0338",
-            written, sorted, split_on_newlines_length + 2);
+    update_sort_print(sorted, split_on_newlines, split_on_newlines_length,
+                      written, length, indices, distances, tab_index);
   }
 }
 int main() {
@@ -233,5 +243,6 @@ int main() {
     split_on_newlines[idx][size] = 0;
     last_newline_idx_plus_1 = next_newline_idx + 1;
   }
+  free(input_buffer);
   sex(split_on_newlines, newlines);
 }
