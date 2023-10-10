@@ -146,7 +146,7 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
             end_of_result_idx++;
           }
           sorted[end_of_result_idx]=0;
-          dprintf(STDOUT_FILENO, "%s", sorted+prev_newline_index + 2 + (tab_index > 0 ? 1:0) /* adding 2 because of the ' >' and adding 1 because of the newline if tab_index is greater than 0 */);
+          dprintf(STDOUT_FILENO, "%s\n", sorted+prev_newline_index + 2 + (tab_index > 0 ? 1:0) /* adding 2 because of the ' >' and adding 1 because of the newline if tab_index is greater than 0 */);
           return;
         }
         for(int idx2=idx;idx2<length+r-1;++idx2){
