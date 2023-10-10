@@ -2,7 +2,10 @@
 
 simple fuzzy finder
 
-## Usage example
+## Usage examples
 ```
 ls | slut
+```
+```
+vim $(ls | slut)
 ```
