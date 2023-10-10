@@ -95,17 +95,21 @@ void sort_on_edit_dist(char **sorted_p, char *written, int written_length, char 
 }
 void sex(char **split_on_newlines, int split_on_newlines_length)
 {
+  if(freopen("/dev/tty", "r", stdin) == NULL){
+    fprintf(stderr, "freopen failed");
+    exit(EXIT_FAILURE);
+  }
   struct termios term_settings;
-  if (tcgetattr(STDERR_FILENO, &term_settings) == -1){
-    fprintf(stdout, "tcgetattr failed on stderr\n");
+  if (tcgetattr(STDIN_FILENO, &term_settings) == -1){
+    fprintf(stderr, "tcgetattr failed on stdin\n");
     exit(EXIT_FAILURE);
   }
   term_settings.c_lflag &= ~ICANON;
   term_settings.c_lflag &= ~ECHO;
   term_settings.c_cc[VMIN] = 1;
   term_settings.c_cc[VTIME] = 0;
-  if (tcsetattr(STDERR_FILENO, TCSANOW, &term_settings) == -1){
-    fprintf(stdout, "tcsetattr_new failed on stderr\n");
+  if (tcsetattr(STDIN_FILENO, TCSANOW, &term_settings) == -1){
+    fprintf(stderr, "tcsetattr_new failed on stdin\n");
     exit(EXIT_FAILURE);
   }
   int tab_index = 0;
@@ -114,10 +118,9 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
   char *written=malloc(capacity);
   char *sorted;
   sort_on_edit_dist(&sorted, written, length, split_on_newlines, split_on_newlines_length, tab_index);
-  fprintf(stdout, "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
-  fflush(stdout);
+  fprintf(stderr, "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
   while (1){
-    int r=read(STDOUT_FILENO, written+length, capacity-length);
+    int r=read(STDIN_FILENO, written+length, capacity-length);
     written[r+length]=0;
     for(int idx=length;idx<length+r;){
       if(written[idx]=='\n'||written[idx]=='\t'||written[idx]=='\v'||written[idx]=='\f'){
@@ -125,7 +128,6 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
           tab_index=(tab_index+1)%split_on_newlines_length;
         if(written[idx]=='\n')
         {
-          fflush(stdout);
           fprintf(stdout, "%s", split_on_newlines[tab_index]);
           fflush(stdout);
           return;
@@ -150,8 +152,7 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
     written[length]=0;
     free(sorted);
     sort_on_edit_dist(&sorted, written, length, split_on_newlines, split_on_newlines_length, tab_index);
-    fprintf(stdout, "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
-    fflush(stdout);
+    fprintf(stderr, "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
   }
 }
 int main()
