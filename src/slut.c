@@ -115,6 +115,7 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
   char *sorted;
   sort_on_edit_dist(&sorted, written, length, split_on_newlines, split_on_newlines_length, tab_index);
   fprintf(stdout, "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
+  fflush(stdout);
   while (1){
     int r=read(STDOUT_FILENO, written+length, capacity-length);
     written[r+length]=0;
@@ -122,6 +123,13 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
       if(written[idx]=='\n'||written[idx]=='\t'||written[idx]=='\v'||written[idx]=='\f'){
         if(written[idx]=='\t')
           tab_index=(tab_index+1)%split_on_newlines_length;
+        if(written[idx]=='\n')
+        {
+          fflush(stdout);
+          fprintf(stdout, "%s", split_on_newlines[tab_index]);
+          fflush(stdout);
+          return;
+        }
         for(int idx2=idx;idx2<length+r-1;++idx2){
           written[idx2]=written[idx2+1];
         }
@@ -143,6 +151,7 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
     free(sorted);
     sort_on_edit_dist(&sorted, written, length, split_on_newlines, split_on_newlines_length, tab_index);
     fprintf(stdout, "\033[0J\033[1K\r%s\0337\n-----------------------------\n%s\033[%dA\0338", written, sorted, split_on_newlines_length + 2);
+    fflush(stdout);
   }
 }
 int main()
