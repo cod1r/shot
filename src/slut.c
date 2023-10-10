@@ -3,16 +3,26 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-void process(char *written, int *written_length)
+void process(char **written_p, int *written_length)
 {
-  int new_length = 0;
+  char *written = *written_p;
+  char *new_written=malloc(*written_length);
+  int new_written_length = 0;
   for(int idx=0;idx<*written_length;++idx){
+    if(written[idx] >= 32 && written[idx] <= 127){
+      new_written[new_written_length++]=written[idx];
+    }
+  }
+  int new_length = 0;
+  for(int idx=0;idx<new_written_length;++idx){
     if(written[idx]!=127){
       ++new_length;
     }else{
       new_length = new_length - 1 >= 0 ? new_length - 1:0;
     }
   }
+  free(*written_p);
+  *written_p = new_written;
   *written_length=new_length;
 }
 int min(int a, int b)
@@ -165,7 +175,7 @@ void sex(char **split_on_newlines, int split_on_newlines_length)
       free(written);
       written=temp;
     }
-    process(written, &length);
+    process(&written, &length);
     written[length]=0;
     free(sorted);
     sort_on_edit_dist_output_to_sorted(&sorted, written, length, split_on_newlines, split_on_newlines_length, tab_index);
