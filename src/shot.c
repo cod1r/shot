@@ -136,7 +136,7 @@ void update_sort_print(char *sorted, char **split_on_newlines,
   dprintf(
       STDERR_FILENO, format_str, written, sorted, split_on_newlines_length + 2 /* adding 2 because of the ' >' and adding 1 because of the newline if tab_index is greater than 0 */);
 }
-void sex(char **split_on_newlines, int split_on_newlines_length) {
+void shotgun(char **split_on_newlines, int split_on_newlines_length) {
   set_up_terminal();
   int length_of_sorted = split_on_newlines_length + strlen(" >");
   for (int idx = 0; idx < split_on_newlines_length; ++idx) {
@@ -244,5 +244,5 @@ int main() {
     last_newline_idx_plus_1 = next_newline_idx + 1;
   }
   free(input_buffer);
-  sex(split_on_newlines, newlines);
+  shotgun(split_on_newlines, newlines);
 }
