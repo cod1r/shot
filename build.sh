@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
 mkdir build
-echo "Compiling slut.c..."
-cc src/slut.c -o build/slut
+echo "Compiling shot.c..."
+cc src/shot.c -o build/shot
 echo "Done!"

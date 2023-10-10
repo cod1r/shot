@@ -1,11 +1,11 @@
-# Slut
+# shot
 
 simple fuzzy finder
 
 ## Usage examples
 ```
-ls | slut
+ls | shot
 ```
 ```
-vim $(ls | slut)
+vim $(ls | shot)
 ```
