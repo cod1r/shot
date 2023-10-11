@@ -24,6 +24,8 @@ void set_up_terminal() {
     exit(EXIT_FAILURE);
   }
 }
+void boyer_moore_string_search(char *pattern, int pattern_length, char *text,
+                               int text_length) {}
 int min(int a, int b) { return a < b ? a : b; }
 int max(int a, int b) { return a > b ? a : b; }
 int levenshtein_dist(char *one, int one_length, char *two, int two_length) {
@@ -129,10 +131,9 @@ void update_sort_print(char *sorted, char **split_on_newlines,
     strncpy(sorted + currn_idx, split_on_newlines[indices[idx]],
             strlen(split_on_newlines[indices[idx]]));
     currn_idx += strlen(split_on_newlines[indices[idx]]);
-    sorted[currn_idx] = '\n';
+    sorted[currn_idx] = (idx == lines_count - 1 ? 0 : '\n');
     currn_idx++;
   }
-  sorted[currn_idx] = 0;
   dprintf(STDERR_FILENO, format_str, written, sorted,
           split_on_newlines_length + strlen(big_right_arrow));
 }
@@ -141,9 +142,8 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
   struct winsize winfo;
   ioctl(STDIN_FILENO, TIOCGWINSZ, &winfo);
 
-  winfo.ws_row -= 3; /* subtracting 2 so that we can fit the first line and
-   separator and subtracting 1 more because for some reason the alternate screen
-   buffer isn't as long as the original buffer on wezterm */
+  winfo.ws_row -= 2; /* subtracting 2 so that we can fit the first line and
+   separator*/
   int lines_count = min(winfo.ws_row, split_on_newlines_length);
 
   int max_length_of_entries = 0;
@@ -153,7 +153,7 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
   }
 
   int length_of_sorted = lines_count + strlen(big_right_arrow) +
-                         max_length_of_entries * lines_count;
+                         max_length_of_entries * lines_count + 1;
 
   int tab_index = 0;
   int capacity = 65535;
