@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 void set_up_terminal() {
@@ -15,6 +16,7 @@ void set_up_terminal() {
   }
   term_settings.c_lflag &= ~ICANON;
   term_settings.c_lflag &= ~ECHO;
+  term_settings.c_lflag &= ~ISIG;
   term_settings.c_cc[VMIN] = 1;
   term_settings.c_cc[VTIME] = 0;
   if (tcsetattr(STDIN_FILENO, TCSANOW, &term_settings) == -1) {
@@ -58,9 +60,9 @@ int levenshtein_dist(char *one, int one_length, char *two, int two_length) {
   free(table);
   return answer;
 }
-void sort_on_edit_dist_output_to_sorted(
-    char *sorted, char *written, int written_length, char **split_on_newlines,
-    int split_on_newlines_length, int *indices, int *distances, int tab_index) {
+char *big_right_arrow = "➜";
+void sort_on_edit_dist_output_to_indices(int split_on_newlines_length,
+                                         int *indices, int *distances) {
   // insertion sort
   for (int i = 0; i < split_on_newlines_length - 1; ++i) {
     int j = indices[i + 1];
@@ -71,20 +73,6 @@ void sort_on_edit_dist_output_to_sorted(
       --j;
     }
   }
-  int currn_idx = 0;
-  for (int idx = 0; idx < split_on_newlines_length; ++idx) {
-    if (idx == tab_index) {
-      sorted[currn_idx] = ' ';
-      sorted[currn_idx + 1] = '>';
-      currn_idx += 2;
-    }
-    strncpy(sorted + currn_idx, split_on_newlines[indices[idx]],
-            strlen(split_on_newlines[indices[idx]]));
-    currn_idx += strlen(split_on_newlines[indices[idx]]);
-    sorted[currn_idx] = '\n';
-    currn_idx++;
-  }
-  sorted[currn_idx] = 0;
 }
 void process(char **written_p, int *written_length) {
   char *written = *written_p;
@@ -110,38 +98,63 @@ void process(char **written_p, int *written_length) {
   *written_length = new_length;
 }
 char *format_str =
+    "\033[H"  // Setting to 0,0 position
+    "\r"      // Clearing from cursor to start of line
     "\033[0J" // Clearing everything from cursing to the end of the screen
-    "\033[1K" // Erase start of line to cursor
-    "\r"      // Move cursor to start of line
     "%s"      // search input
     "\0337"   // Saving cursor position
-    "\n-----------------------------\n" // Separator
-    "%s"                                // Entries that were piped
+    "\n――――――――――――――――――――――――――――――――――――――――――――――\n" // Separator
+    "%s"       // Entries that were piped
     "\033[%dA" // Moving cursor back to search input line
     "\0338"    // Moving cursor back to saved position
     ;
 void update_sort_print(char *sorted, char **split_on_newlines,
                        int split_on_newlines_length, char *written,
                        int written_length, int *indices, int *distances,
-                       int tab_index) {
+                       int tab_index, int lines_count) {
   for (int i = 0; i < split_on_newlines_length; ++i) {
     indices[i] = i;
     distances[i] =
         levenshtein_dist(written, written_length, split_on_newlines[i],
                          strlen(split_on_newlines[i]));
   }
-  sort_on_edit_dist_output_to_sorted(
-      sorted, written, written_length, split_on_newlines,
-      split_on_newlines_length, indices, distances, tab_index);
-  dprintf(
-      STDERR_FILENO, format_str, written, sorted, split_on_newlines_length + 2 /* adding 2 because of the ' >' and adding 1 because of the newline if tab_index is greater than 0 */);
+  sort_on_edit_dist_output_to_indices(split_on_newlines_length, indices,
+                                      distances);
+  int currn_idx = 0;
+  for (int idx = 0; idx < lines_count; ++idx) {
+    if (idx == tab_index) {
+      strncpy(sorted + currn_idx, big_right_arrow, strlen(big_right_arrow));
+      currn_idx += strlen(big_right_arrow);
+    }
+    strncpy(sorted + currn_idx, split_on_newlines[indices[idx]],
+            strlen(split_on_newlines[indices[idx]]));
+    currn_idx += strlen(split_on_newlines[indices[idx]]);
+    sorted[currn_idx] = '\n';
+    currn_idx++;
+  }
+  sorted[currn_idx] = 0;
+  dprintf(STDERR_FILENO, format_str, written, sorted,
+          split_on_newlines_length + strlen(big_right_arrow));
 }
 void shotgun(char **split_on_newlines, int split_on_newlines_length) {
   set_up_terminal();
-  int length_of_sorted = split_on_newlines_length + strlen(" >");
+  struct winsize winfo;
+  ioctl(STDIN_FILENO, TIOCGWINSZ, &winfo);
+
+  winfo.ws_row -= 3; /* subtracting 2 so that we can fit the first line and
+   separator and subtracting 1 more because for some reason the alternate screen
+   buffer isn't as long as the original buffer on wezterm */
+  int lines_count = min(winfo.ws_row, split_on_newlines_length);
+
+  int max_length_of_entries = 0;
   for (int idx = 0; idx < split_on_newlines_length; ++idx) {
-    length_of_sorted += strlen(split_on_newlines[idx]);
+    max_length_of_entries =
+        max(strlen(split_on_newlines[idx]), max_length_of_entries);
   }
+
+  int length_of_sorted = lines_count + strlen(big_right_arrow) +
+                         max_length_of_entries * lines_count;
+
   int tab_index = 0;
   int capacity = 65535;
   int length = 0;
@@ -150,18 +163,24 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
   int *indices = malloc(split_on_newlines_length * sizeof(int));
   int *distances = malloc(split_on_newlines_length * sizeof(int));
   char *sorted = malloc(length_of_sorted);
+  dprintf(STDERR_FILENO, "\033[?1049h");
   update_sort_print(sorted, split_on_newlines, split_on_newlines_length,
-                    written, length, indices, distances, tab_index);
+                    written, length, indices, distances, tab_index,
+                    lines_count);
   while (1) {
     int r = read(STDIN_FILENO, written + length, capacity - length);
     written[r + length] = 0;
     for (int idx = length; idx < length + r;) {
-      if (written[idx] == '\n' || written[idx] == '\t' ||
-          written[idx] == '\v' || written[idx] == '\f') {
+      // 3 is the end of text character / control+c
+      if (written[idx] == 3) {
+        dprintf(STDERR_FILENO, "\033[?1049l");
+        return;
+      }
+      if (written[idx] == '\n' || written[idx] == '\t') {
         if (written[idx] == '\t')
-          tab_index = (tab_index + 1) % split_on_newlines_length;
+          tab_index = (tab_index + 1) % lines_count;
         if (written[idx] == '\n') {
-          fprintf(stderr, "\r");
+          dprintf(STDERR_FILENO, "\033[?1049l");
           int current_line_in_sorted = 0;
           int prev_newline_index = 0;
           int end_of_result_idx = 0;
@@ -181,7 +200,8 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
           }
           sorted[end_of_result_idx] = 0;
           dprintf(STDOUT_FILENO, "%s\n",
-                  sorted + prev_newline_index + 2 + (tab_index > 0 ? 1 : 0));
+                  sorted + prev_newline_index + strlen(big_right_arrow) +
+                      (tab_index > 0 ? 1 : 0));
           return;
         }
         for (int idx2 = idx; idx2 < length + r - 1; ++idx2) {
@@ -203,7 +223,8 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
     process(&written, &length);
     written[length] = 0;
     update_sort_print(sorted, split_on_newlines, split_on_newlines_length,
-                      written, length, indices, distances, tab_index);
+                      written, length, indices, distances, tab_index,
+                      lines_count);
   }
 }
 int main() {
