@@ -60,7 +60,6 @@ int levenshtein_dist(char *one, int one_length, char *two, int two_length) {
   free(table);
   return answer;
 }
-char *big_right_arrow = "➜";
 void sort_on_edit_dist_output_to_indices(int split_on_newlines_length,
                                          int *indices, int *distances) {
   // insertion sort
@@ -97,6 +96,7 @@ void process(char **written_p, int *written_length) {
   free(new_written);
   *written_length = new_length;
 }
+char *big_right_arrow = "➜";
 char *format_str =
     "\033[H"  // Setting to 0,0 position
     "\r"      // Clearing from cursor to start of line
