@@ -113,7 +113,8 @@ char *format_str =
 void update_sort_print(char *sorted, char **split_on_newlines,
                        int split_on_newlines_length, char *written,
                        int written_length, int *indices, int *distances,
-                       int tab_index, int lines_count) {
+                       int tab_index, int lines_count,
+                       int max_width_length_of_line) {
   for (int i = 0; i < split_on_newlines_length; ++i) {
     indices[i] = i;
     distances[i] =
@@ -128,9 +129,12 @@ void update_sort_print(char *sorted, char **split_on_newlines,
       strncpy(sorted + currn_idx, big_right_arrow, strlen(big_right_arrow));
       currn_idx += strlen(big_right_arrow);
     }
-    strncpy(sorted + currn_idx, split_on_newlines[indices[idx]],
-            strlen(split_on_newlines[indices[idx]]));
-    currn_idx += strlen(split_on_newlines[indices[idx]]);
+    int length_to_add =
+        min(strlen(split_on_newlines[indices[idx]]),
+            max_width_length_of_line -
+                (idx == tab_index ? strlen(big_right_arrow) : 0));
+    strncpy(sorted + currn_idx, split_on_newlines[indices[idx]], length_to_add);
+    currn_idx += length_to_add;
     sorted[currn_idx] = (idx == lines_count - 1 ? 0 : '\n');
     currn_idx++;
   }
@@ -165,8 +169,8 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
   char *sorted = malloc(length_of_sorted);
   dprintf(STDERR_FILENO, "\033[?1049h");
   update_sort_print(sorted, split_on_newlines, split_on_newlines_length,
-                    written, length, indices, distances, tab_index,
-                    lines_count);
+                    written, length, indices, distances, tab_index, lines_count,
+                    winfo.ws_col);
   while (1) {
     int r = read(STDIN_FILENO, written + length, capacity - length);
     written[r + length] = 0;
@@ -224,7 +228,7 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
     written[length] = 0;
     update_sort_print(sorted, split_on_newlines, split_on_newlines_length,
                       written, length, indices, distances, tab_index,
-                      lines_count);
+                      lines_count, winfo.ws_col);
   }
 }
 int main() {
