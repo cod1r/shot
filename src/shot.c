@@ -237,7 +237,7 @@ int main() {
   char *input_buffer = malloc(input_buffer_capacity);
   int bytes_read;
   while ((bytes_read = read(STDIN_FILENO, input_buffer + input_buffer_length,
-                            input_buffer_capacity - input_buffer_length))) {
+                            input_buffer_capacity - input_buffer_length)) > 0) {
     input_buffer_length += bytes_read;
     if (input_buffer_length == input_buffer_capacity) {
       char *temp = malloc(input_buffer_capacity *= 2);
@@ -268,6 +268,8 @@ int main() {
     split_on_newlines[idx][size] = 0;
     last_newline_idx_plus_1 = next_newline_idx + 1;
   }
-  free(input_buffer);
-  shotgun(split_on_newlines, newlines);
+  if (input_buffer_length > 0) {
+    free(input_buffer);
+    shotgun(split_on_newlines, newlines);
+  }
 }
