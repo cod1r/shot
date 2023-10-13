@@ -1,10 +1,18 @@
+#include <fcntl.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
-void set_up_terminal() {
+
+#define DEBUG(X)                                                               \
+  int fd = open("log.txt", O_RDWR | O_APPEND | O_CREAT);                       \
+  dprintf(fd, "lines: %d\n", X);                                               \
+  close(fd);
+
+struct termios set_up_terminal() {
   if (freopen("/dev/tty", "r", stdin) == NULL) {
     fprintf(stderr, "freopen failed");
     exit(EXIT_FAILURE);
@@ -14,11 +22,20 @@ void set_up_terminal() {
     fprintf(stderr, "tcgetattr failed on stdin\n");
     exit(EXIT_FAILURE);
   }
+  struct termios term_settings_copy = term_settings;
   term_settings.c_lflag &= ~ICANON;
   term_settings.c_lflag &= ~ECHO;
   term_settings.c_lflag &= ~ISIG;
   term_settings.c_cc[VMIN] = 1;
   term_settings.c_cc[VTIME] = 0;
+  if (tcsetattr(STDIN_FILENO, TCSANOW, &term_settings) == -1) {
+    fprintf(stderr, "tcsetattr_new failed on stdin\n");
+    exit(EXIT_FAILURE);
+  }
+  dprintf(STDERR_FILENO, "\033[?1049h");
+  return term_settings_copy;
+}
+void reset_terminal(struct termios term_settings) {
   if (tcsetattr(STDIN_FILENO, TCSANOW, &term_settings) == -1) {
     fprintf(stderr, "tcsetattr_new failed on stdin\n");
     exit(EXIT_FAILURE);
@@ -75,8 +92,7 @@ void sort_on_edit_dist_output_to_indices(int split_on_newlines_length,
     }
   }
 }
-void process(char **written_p, int *written_length) {
-  char *written = *written_p;
+void process(char *written, int *written_length) {
   char *new_written = malloc(*written_length);
   int new_written_length = 0;
   for (int idx = 0; idx < *written_length; ++idx) {
@@ -87,6 +103,7 @@ void process(char **written_p, int *written_length) {
   int new_length = 0;
   for (int idx = 0; idx < new_written_length; ++idx) {
     if (new_written[idx] != 127) {
+      new_written[new_length] = new_written[idx];
       ++new_length;
     } else {
       new_length = max(0, new_length - 1);
@@ -141,23 +158,61 @@ void update_sort_print(char *sorted, char **split_on_newlines,
   dprintf(STDERR_FILENO, format_str, written, sorted,
           split_on_newlines_length + strlen(big_right_arrow));
 }
+struct window_changes_info {
+  struct winsize *winfo;
+  int *lines_count;
+  int split_on_newlines_length;
+  int *cancel_ptr;
+};
+void *poll_for_window_changes(void *arg) {
+  struct window_changes_info wc = *(struct window_changes_info *)arg;
+  int prev_lines_count;
+  while (!*wc.cancel_ptr) {
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, wc.winfo) == -1) {
+      dprintf(STDERR_FILENO, "\033[?1049lioctl has failed");
+      exit(EXIT_FAILURE);
+    }
+    if (wc.winfo->ws_row != prev_lines_count) {
+      prev_lines_count = wc.winfo->ws_row;
+      *wc.lines_count = min(wc.winfo->ws_row - 2, wc.split_on_newlines_length);
+      // read blocks so when the termina screen resizes, the only thing we
+      // can do is to reset the screen output to empty in the window size
+      // polling thread.
+      dprintf(STDERR_FILENO,
+              "\033[H\033[0JScreen resized. Type something to reload.");
+    }
+  }
+  return NULL;
+}
 void shotgun(char **split_on_newlines, int split_on_newlines_length) {
-  set_up_terminal();
-  struct winsize winfo;
-  ioctl(STDIN_FILENO, TIOCGWINSZ, &winfo);
-
-  winfo.ws_row -= 2; /* subtracting 2 so that we can fit the first line and
-   separator*/
-  int lines_count = min(winfo.ws_row, split_on_newlines_length);
+  struct termios term_settings_old = set_up_terminal();
 
   int max_length_of_entries = 0;
   for (int idx = 0; idx < split_on_newlines_length; ++idx) {
     max_length_of_entries =
         max(strlen(split_on_newlines[idx]), max_length_of_entries);
   }
+  int initial_sorted_length =
+      split_on_newlines_length * (max_length_of_entries + 1) + 1;
+  char *sorted = malloc(initial_sorted_length);
+  struct winsize winfo;
+  if (ioctl(STDIN_FILENO, TIOCGWINSZ, &winfo) == -1) {
+    dprintf(STDERR_FILENO, "\033[?1049lioctl has failed");
+    exit(EXIT_FAILURE);
+  }
 
-  int length_of_sorted = lines_count + strlen(big_right_arrow) +
-                         max_length_of_entries * lines_count + 1;
+  int lines_count = min(winfo.ws_row - 2, split_on_newlines_length);
+  struct window_changes_info wc;
+  int cancel_thread = 0;
+  wc.winfo = &winfo;
+  wc.lines_count = &lines_count;
+  wc.split_on_newlines_length = split_on_newlines_length;
+  wc.cancel_ptr = &cancel_thread;
+  pthread_t thread;
+  if (pthread_create(&thread, NULL, &poll_for_window_changes, &wc) == -1) {
+    dprintf(STDERR_FILENO, "pthread_create failed");
+    exit(EXIT_FAILURE);
+  }
 
   int tab_index = 0;
   int capacity = 65535;
@@ -166,25 +221,25 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
   written[0] = 0;
   int *indices = malloc(split_on_newlines_length * sizeof(int));
   int *distances = malloc(split_on_newlines_length * sizeof(int));
-  char *sorted = malloc(length_of_sorted);
-  dprintf(STDERR_FILENO, "\033[?1049h");
-  update_sort_print(sorted, split_on_newlines, split_on_newlines_length,
-                    written, length, indices, distances, tab_index, lines_count,
-                    winfo.ws_col);
   while (1) {
+    update_sort_print(sorted, split_on_newlines, split_on_newlines_length,
+                      written, length, indices, distances, tab_index,
+                      lines_count, winfo.ws_col);
     int r = read(STDIN_FILENO, written + length, capacity - length);
     written[r + length] = 0;
     for (int idx = length; idx < length + r;) {
       // 3 is the end of text character / control+c
       if (written[idx] == 3) {
         dprintf(STDERR_FILENO, "\033[?1049l");
+        reset_terminal(term_settings_old);
         return;
       }
-      if (written[idx] == '\n' || written[idx] == '\t') {
+      if (written[idx] == '\t' || written[idx] == '\n') {
         if (written[idx] == '\t')
           tab_index = (tab_index + 1) % lines_count;
         if (written[idx] == '\n') {
           dprintf(STDERR_FILENO, "\033[?1049l");
+          reset_terminal(term_settings_old);
           int current_line_in_sorted = 0;
           int prev_newline_index = 0;
           int end_of_result_idx = 0;
@@ -206,6 +261,11 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
           dprintf(STDOUT_FILENO, "%s\n",
                   sorted + prev_newline_index + strlen(big_right_arrow) +
                       (tab_index > 0 ? 1 : 0));
+          cancel_thread = 1;
+          if (pthread_cancel(thread) != 0) {
+            dprintf(STDERR_FILENO, "pthread_cancel failed");
+            exit(EXIT_FAILURE);
+          }
           return;
         }
         for (int idx2 = idx; idx2 < length + r - 1; ++idx2) {
@@ -224,11 +284,8 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
       free(written);
       written = temp;
     }
-    process(&written, &length);
-    written[length] = 0;
-    update_sort_print(sorted, split_on_newlines, split_on_newlines_length,
-                      written, length, indices, distances, tab_index,
-                      lines_count, winfo.ws_col);
+    process(written, &length);
+    written[min(length, winfo.ws_col)] = 0;
   }
 }
 int main() {
