@@ -7,10 +7,16 @@
 #include <termios.h>
 #include <unistd.h>
 
-#define DEBUG(X)                                                               \
+#define DEBUG(X, F)                                                            \
   int fd = open("log.txt", O_RDWR | O_APPEND | O_CREAT);                       \
-  dprintf(fd, "lines: %d\n", X);                                               \
+  dprintf(fd, F, X);                                                           \
   close(fd);
+
+// We are only allowing ascii characters for now.
+// Unicode is a pain
+const int32_t MIN_ALPHABET_VALUE = 32;
+const int32_t MAX_ALPHABET_VALUE = 126;
+const int32_t ALPHABET_LEN = 126 - 32 + 1;
 
 struct termios set_up_terminal() {
   if (freopen("/dev/tty", "r", stdin) == NULL) {
@@ -41,29 +47,113 @@ void reset_terminal(struct termios term_settings) {
     exit(EXIT_FAILURE);
   }
 }
-void boyer_moore_string_search(char *pattern, int pattern_length, char *text,
-                               int text_length) {}
-int min(int a, int b) { return a < b ? a : b; }
-int max(int a, int b) { return a > b ? a : b; }
-int levenshtein_dist(char *one, int one_length, char *two, int two_length) {
-  int table_row_length = one_length + 1;
-  int table_col_length = two_length + 1;
-  int **table = malloc(table_row_length * sizeof(int *));
-  for (int i = 0; i < table_row_length; ++i) {
-    table[i] = malloc(table_col_length * sizeof(int));
-    for (int j = 0; j < table_col_length; ++j) {
+int32_t min(int32_t a, int32_t b) { return a < b ? a : b; }
+int32_t max(int32_t a, int32_t b) { return a > b ? a : b; }
+int32_t **construct_boyer_moore_bad_character_table(char *pattern,
+                                                    int pattern_length) {
+  int **table = malloc(ALPHABET_LEN * sizeof(int *));
+  for (int32_t i = 0; i < ALPHABET_LEN; ++i) {
+    table[i] = malloc(pattern_length * sizeof(int32_t));
+    // initial value should be -1 because there could not be
+    // a next-highest i character that occurs at index j in pattern
+    memset(table[i], -1, pattern_length * sizeof(int32_t));
+  }
+
+  for (int32_t i = 0; i < ALPHABET_LEN; ++i) {
+    for (int32_t j = 0; j < pattern_length; ++j) {
+      if (pattern[j] - MIN_ALPHABET_VALUE == i) {
+        table[i][j] = j;
+      } else if (j) {
+        table[i][j] = table[i][j - 1];
+      }
+    }
+  }
+  return table;
+}
+int32_t boyer_moore_string_search(int32_t **boyer_moore_table_bad_character,
+                                  int32_t row_length, int32_t columns_length,
+                                  char *pattern, int32_t pattern_length,
+                                  char *text, int32_t text_length) {
+  if (pattern_length == 0)
+    return -1;
+  int32_t *good_suffix_preprocess = malloc(pattern_length * sizeof(int32_t));
+  memset(good_suffix_preprocess, 0, pattern_length * sizeof(int32_t));
+  int32_t last_compare_index = pattern_length - 1;
+  for (int32_t i = pattern_length - 2; i >= 0;) {
+    int32_t last_compare_idx_cpy = last_compare_index;
+    int32_t i_cpy = i;
+    while (pattern[last_compare_idx_cpy] == pattern[i_cpy]) {
+      --last_compare_idx_cpy;
+      --i_cpy;
+    }
+    if (i - i_cpy > 1) {
+      good_suffix_preprocess[last_compare_index] = i;
+      i = i_cpy;
+      last_compare_index = last_compare_idx_cpy;
+    } else {
+      --i;
+    }
+  }
+  for (int32_t i = pattern_length - 1; i < text_length;) {
+    int32_t pattern_character_compare_index = pattern_length - 1;
+    int32_t text_character_compare_index = i;
+    int32_t shift_bad_character_rule = 0;
+    while (pattern_character_compare_index >= 0 &&
+           text_character_compare_index >= 0 &&
+           pattern[pattern_character_compare_index] ==
+               text[text_character_compare_index]) {
+      --pattern_character_compare_index;
+      --text_character_compare_index;
+    }
+    if (pattern_character_compare_index >= 0) {
+      int32_t j =
+          boyer_moore_table_bad_character[text[text_character_compare_index] -
+                                          MIN_ALPHABET_VALUE]
+                                         [pattern_character_compare_index];
+      if (j != -1)
+        shift_bad_character_rule = pattern_character_compare_index - j;
+      else
+        shift_bad_character_rule =
+            pattern_length -
+            (pattern_length - 1 - pattern_character_compare_index);
+    } else {
+      return text_character_compare_index + 1;
+    }
+
+    int32_t shift_good_suffix_rule = 0;
+    if (pattern_length - 1 - pattern_character_compare_index > 1) {
+      int32_t t_prime = good_suffix_preprocess[pattern_length - 1];
+      if (t_prime != 0) {
+        shift_good_suffix_rule = pattern_length - 1 - t_prime;
+      }
+    }
+    // shift is whichever is greatest between bad-character rule
+    // and the good suffix rule
+    i += max(shift_good_suffix_rule, shift_bad_character_rule);
+  }
+  free(good_suffix_preprocess);
+  return -1;
+}
+int32_t levenshtein_dist(char *one, int32_t one_length, char *two,
+                         int32_t two_length) {
+  int32_t table_row_length = one_length + 1;
+  int32_t table_col_length = two_length + 1;
+  int32_t **table = malloc(table_row_length * sizeof(int32_t *));
+  for (int32_t i = 0; i < table_row_length; ++i) {
+    table[i] = malloc(table_col_length * sizeof(int32_t));
+    for (int32_t j = 0; j < table_col_length; ++j) {
       table[i][j] = 0;
     }
   }
   table[0][0] = 0;
-  for (int i = 1; i < table_row_length; ++i) {
+  for (int32_t i = 1; i < table_row_length; ++i) {
     table[i][0] = table[i - 1][0] + 1;
   }
-  for (int i = 1; i < table_col_length; ++i) {
+  for (int32_t i = 1; i < table_col_length; ++i) {
     table[0][i] = table[0][i - 1] + 1;
   }
-  for (int i = 1; i < table_row_length; ++i) {
-    for (int j = 1; j < table_col_length; ++j) {
+  for (int32_t i = 1; i < table_row_length; ++i) {
+    for (int32_t j = 1; j < table_col_length; ++j) {
       if (one[i - 1] == two[i - 1]) {
         table[i][j] = table[i - 1][j - 1];
       } else {
@@ -72,36 +162,36 @@ int levenshtein_dist(char *one, int one_length, char *two, int two_length) {
       }
     }
   }
-  int answer = table[one_length][two_length];
-  for (int i = 0; i < table_row_length; ++i) {
+  int32_t answer = table[one_length][two_length];
+  for (int32_t i = 0; i < table_row_length; ++i) {
     free(table[i]);
   }
   free(table);
   return answer;
 }
-void sort_on_edit_dist_output_to_indices(int split_on_newlines_length,
-                                         int *indices, int *distances) {
+void sort_on_edit_dist_output_to_indices(int32_t split_on_newlines_length,
+                                         int32_t *indices, int32_t *distances) {
   // insertion sort
-  for (int i = 0; i < split_on_newlines_length - 1; ++i) {
-    int j = indices[i + 1];
+  for (int32_t i = 0; i < split_on_newlines_length - 1; ++i) {
+    int32_t j = indices[i + 1];
     while (distances[indices[j - 1]] > distances[indices[j]] && j > 0) {
-      int temp = indices[j];
+      int32_t temp = indices[j];
       indices[j] = indices[j - 1];
       indices[j - 1] = temp;
       --j;
     }
   }
 }
-void process(char *written, int *written_length) {
+void process(char *written, int32_t *written_length) {
   char *new_written = malloc(*written_length);
-  int new_written_length = 0;
-  for (int idx = 0; idx < *written_length; ++idx) {
+  int32_t new_written_length = 0;
+  for (int32_t idx = 0; idx < *written_length; ++idx) {
     if (written[idx] >= 32 && written[idx] <= 127) {
       new_written[new_written_length++] = written[idx];
     }
   }
-  int new_length = 0;
-  for (int idx = 0; idx < new_written_length; ++idx) {
+  int32_t new_length = 0;
+  for (int32_t idx = 0; idx < new_written_length; ++idx) {
     if (new_written[idx] != 127) {
       new_written[new_length] = new_written[idx];
       ++new_length;
@@ -109,7 +199,7 @@ void process(char *written, int *written_length) {
       new_length = max(0, new_length - 1);
     }
   }
-  for (int idx = 0; idx < new_length; ++idx) {
+  for (int32_t idx = 0; idx < new_length; ++idx) {
     written[idx] = new_written[idx];
   }
   free(new_written);
@@ -127,46 +217,47 @@ char *format_str =
     "\033[%dA" // Moving cursor back to search input line
     "\0338"    // Moving cursor back to saved position
     ;
-void update_sort_print(char *sorted, char **split_on_newlines,
-                       int split_on_newlines_length, char *written,
-                       int written_length, int *indices, int *distances,
-                       int tab_index, int lines_count,
-                       int max_width_length_of_line) {
-  for (int i = 0; i < split_on_newlines_length; ++i) {
-    indices[i] = i;
-    distances[i] =
-        levenshtein_dist(written, written_length, split_on_newlines[i],
-                         strlen(split_on_newlines[i]));
-  }
-  sort_on_edit_dist_output_to_indices(split_on_newlines_length, indices,
-                                      distances);
-  int currn_idx = 0;
-  for (int idx = 0; idx < lines_count; ++idx) {
-    if (idx == tab_index) {
-      strncpy(sorted + currn_idx, big_right_arrow, strlen(big_right_arrow));
+void update_match_print(char *results, char **split_on_newlines,
+                        int32_t split_on_newlines_length, char *written,
+                        int32_t written_length, int32_t *matches,
+                        int32_t tab_index, int32_t lines_count,
+                        int32_t found_amt, int32_t max_width_length_of_line) {
+  int32_t currn_idx = 0;
+  int32_t found_counter = 0;
+  if (found_amt < lines_count)
+    tab_index %= found_amt;
+  for (int32_t idx = 0; idx < lines_count; ++idx) {
+    // if nothing is written, all entries should be printed
+    // if something is written, some or all entries could be skipped
+    if (matches[idx] == -1 && written_length > 0)
+      continue;
+    if (tab_index == found_counter) {
+      strncpy(results + currn_idx, big_right_arrow, strlen(big_right_arrow));
       currn_idx += strlen(big_right_arrow);
     }
-    int length_to_add =
-        min(strlen(split_on_newlines[indices[idx]]),
+    // clamps entry to a value that doesn't go past the terminal screens width
+    int32_t length_to_add =
+        min(strlen(split_on_newlines[idx]),
             max_width_length_of_line -
-                (idx == tab_index ? strlen(big_right_arrow) : 0));
-    strncpy(sorted + currn_idx, split_on_newlines[indices[idx]], length_to_add);
+                (tab_index == found_counter ? strlen(big_right_arrow) : 0));
+    strncpy(results + currn_idx, split_on_newlines[idx], length_to_add);
     currn_idx += length_to_add;
-    sorted[currn_idx] = (idx == lines_count - 1 ? 0 : '\n');
-    currn_idx++;
+    results[currn_idx] = '\n';
+    currn_idx += 1;
+    found_counter += 1;
   }
-  dprintf(STDERR_FILENO, format_str, written, sorted,
-          split_on_newlines_length + strlen(big_right_arrow));
+  results[currn_idx] = 0;
+  dprintf(STDERR_FILENO, format_str, written, results, lines_count);
 }
 struct window_changes_info {
   struct winsize *winfo;
-  int *lines_count;
-  int split_on_newlines_length;
-  int *cancel_ptr;
+  int32_t *lines_count;
+  int32_t split_on_newlines_length;
+  int32_t *cancel_ptr;
 };
 void *poll_for_window_changes(void *arg) {
   struct window_changes_info wc = *(struct window_changes_info *)arg;
-  int prev_lines_count;
+  int32_t prev_lines_count = wc.winfo->ws_row;
   while (!*wc.cancel_ptr) {
     if (ioctl(STDIN_FILENO, TIOCGWINSZ, wc.winfo) == -1) {
       dprintf(STDERR_FILENO, "\033[?1049lioctl has failed");
@@ -184,26 +275,27 @@ void *poll_for_window_changes(void *arg) {
   }
   return NULL;
 }
-void shotgun(char **split_on_newlines, int split_on_newlines_length) {
+void shotgun(char **split_on_newlines, int32_t split_on_newlines_length) {
   struct termios term_settings_old = set_up_terminal();
 
-  int max_length_of_entries = 0;
-  for (int idx = 0; idx < split_on_newlines_length; ++idx) {
+  int32_t max_length_of_entries = 0;
+  for (int32_t idx = 0; idx < split_on_newlines_length; ++idx) {
     max_length_of_entries =
         max(strlen(split_on_newlines[idx]), max_length_of_entries);
   }
-  int initial_sorted_length =
+  int32_t initial_results_length =
       split_on_newlines_length * (max_length_of_entries + 1) + 1;
-  char *sorted = malloc(initial_sorted_length);
+  char *results = malloc(initial_results_length);
+
   struct winsize winfo;
   if (ioctl(STDIN_FILENO, TIOCGWINSZ, &winfo) == -1) {
     dprintf(STDERR_FILENO, "\033[?1049lioctl has failed");
     exit(EXIT_FAILURE);
   }
 
-  int lines_count = min(winfo.ws_row - 2, split_on_newlines_length);
+  int32_t lines_count = min(winfo.ws_row - 2, split_on_newlines_length);
   struct window_changes_info wc;
-  int cancel_thread = 0;
+  int32_t cancel_thread = 0;
   wc.winfo = &winfo;
   wc.lines_count = &lines_count;
   wc.split_on_newlines_length = split_on_newlines_length;
@@ -214,20 +306,21 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
     exit(EXIT_FAILURE);
   }
 
-  int tab_index = 0;
-  int capacity = 65535;
-  int length = 0;
+  int32_t tab_index = 0;
+  int32_t capacity = 65535;
+  int32_t length = 0;
   char *written = malloc(capacity);
   written[0] = 0;
-  int *indices = malloc(split_on_newlines_length * sizeof(int));
-  int *distances = malloc(split_on_newlines_length * sizeof(int));
+  int32_t **boyer_moore_bad_character_table = NULL;
+  int32_t *matches = malloc(split_on_newlines_length * sizeof(int32_t));
+  int32_t found_amt = 0;
   while (1) {
-    update_sort_print(sorted, split_on_newlines, split_on_newlines_length,
-                      written, length, indices, distances, tab_index,
-                      lines_count, winfo.ws_col);
-    int r = read(STDIN_FILENO, written + length, capacity - length);
+    update_match_print(results, split_on_newlines, split_on_newlines_length,
+                       written, length, matches, tab_index, lines_count,
+                       found_amt, winfo.ws_col);
+    int32_t r = read(STDIN_FILENO, written + length, capacity - length);
     written[r + length] = 0;
-    for (int idx = length; idx < length + r;) {
+    for (int32_t idx = length; idx < length + r;) {
       // 3 is the end of text character / control+c
       if (written[idx] == 3) {
         dprintf(STDERR_FILENO, "\033[?1049l");
@@ -236,30 +329,31 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
       }
       if (written[idx] == '\t' || written[idx] == '\n') {
         if (written[idx] == '\t')
-          tab_index = (tab_index + 1) % lines_count;
+          // min is used so that the correct wrapping occurs
+          tab_index = (tab_index + 1) % min(found_amt, lines_count);
         if (written[idx] == '\n') {
           dprintf(STDERR_FILENO, "\033[?1049l");
           reset_terminal(term_settings_old);
-          int current_line_in_sorted = 0;
-          int prev_newline_index = 0;
-          int end_of_result_idx = 0;
-          for (int i = 0; i < strlen(sorted); ++i) {
-            if (sorted[i] == '\n') {
+          int32_t current_line_in_results = 0;
+          int32_t prev_newline_index = 0;
+          int32_t end_of_result_idx = 0;
+          for (int32_t i = 0; i < strlen(results); ++i) {
+            if (results[i] == '\n') {
               prev_newline_index = i;
-              current_line_in_sorted++;
+              current_line_in_results++;
             }
-            if (current_line_in_sorted == tab_index) {
+            if (current_line_in_results == tab_index) {
               break;
             }
           }
           end_of_result_idx = prev_newline_index + 1;
-          while (end_of_result_idx < strlen(sorted) &&
-                 sorted[end_of_result_idx] != '\n') {
+          while (end_of_result_idx < strlen(results) &&
+                 results[end_of_result_idx] != '\n') {
             end_of_result_idx++;
           }
-          sorted[end_of_result_idx] = 0;
+          results[end_of_result_idx] = 0;
           dprintf(STDOUT_FILENO, "%s\n",
-                  sorted + prev_newline_index + strlen(big_right_arrow) +
+                  results + prev_newline_index + strlen(big_right_arrow) +
                       (tab_index > 0 ? 1 : 0));
           cancel_thread = 1;
           if (pthread_cancel(thread) != 0) {
@@ -268,7 +362,7 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
           }
           return;
         }
-        for (int idx2 = idx; idx2 < length + r - 1; ++idx2) {
+        for (int32_t idx2 = idx; idx2 < length + r - 1; ++idx2) {
           written[idx2] = written[idx2 + 1];
         }
         --r;
@@ -279,26 +373,53 @@ void shotgun(char **split_on_newlines, int split_on_newlines_length) {
     length += r;
     if (length == capacity) {
       char *temp = malloc(capacity *= 2);
-      for (int idx = 0; idx < length; ++idx)
+      for (int32_t idx = 0; idx < length; ++idx)
         temp[idx] = written[idx];
       free(written);
       written = temp;
     }
     process(written, &length);
-    written[min(length, winfo.ws_col)] = 0;
+    written[length] = 0;
+    // reconstructing the bad character table for every change. not the
+    // most performant thing but eh
+    if (boyer_moore_bad_character_table != NULL) {
+      for (int32_t idx = 0; idx < ALPHABET_LEN; ++idx) {
+        free(boyer_moore_bad_character_table[idx]);
+      }
+      free(boyer_moore_bad_character_table);
+    }
+    boyer_moore_bad_character_table =
+        construct_boyer_moore_bad_character_table(written, length);
+    found_amt = 0;
+    // goes through each entry and tries to find a pattern match
+    for (int32_t split_idx = 0; split_idx < split_on_newlines_length;
+         ++split_idx) {
+      int32_t found = boyer_moore_string_search(
+          boyer_moore_bad_character_table, ALPHABET_LEN, length, written,
+          length, split_on_newlines[split_idx],
+          strlen(split_on_newlines[split_idx]));
+      if (found != -1) {
+        found_amt += 1;
+        matches[split_idx] = split_idx;
+      } else {
+        matches[split_idx] = -1;
+      }
+    }
+    // ensures found_amt is never 0 and that tab_index is never divided by 0
+    if (found_amt == 0) found_amt = lines_count;
   }
 }
-int main() {
-  int input_buffer_capacity = 65535;
-  int input_buffer_length = 0;
+int32_t main() {
+  int32_t input_buffer_capacity = 65535;
+  int32_t input_buffer_length = 0;
   char *input_buffer = malloc(input_buffer_capacity);
-  int bytes_read;
+  int32_t bytes_read;
   while ((bytes_read = read(STDIN_FILENO, input_buffer + input_buffer_length,
                             input_buffer_capacity - input_buffer_length)) > 0) {
     input_buffer_length += bytes_read;
     if (input_buffer_length == input_buffer_capacity) {
       char *temp = malloc(input_buffer_capacity *= 2);
-      for (int idx = 0; idx < input_buffer_length; ++idx) {
+      for (int32_t idx = 0; idx < input_buffer_length; ++idx) {
         temp[idx] = input_buffer[idx];
       }
       free(input_buffer);
@@ -306,19 +427,19 @@ int main() {
     }
   }
   input_buffer[input_buffer_length] = 0;
-  int newlines = 0;
-  for (int idx = 0; idx < input_buffer_length; ++idx) {
+  int32_t newlines = 0;
+  for (int32_t idx = 0; idx < input_buffer_length; ++idx) {
     if (input_buffer[idx] == '\n')
       newlines += 1;
   }
   char **split_on_newlines = malloc(newlines * sizeof(char *));
-  int last_newline_idx_plus_1 = 0;
-  for (int idx = 0; idx < newlines; ++idx) {
-    int next_newline_idx = last_newline_idx_plus_1 + 1;
+  int32_t last_newline_idx_plus_1 = 0;
+  for (int32_t idx = 0; idx < newlines; ++idx) {
+    int32_t next_newline_idx = last_newline_idx_plus_1 + 1;
     while (input_buffer[next_newline_idx] != '\n' &&
            next_newline_idx < input_buffer_length)
       ++next_newline_idx;
-    int size = next_newline_idx - last_newline_idx_plus_1;
+    int32_t size = next_newline_idx - last_newline_idx_plus_1;
     split_on_newlines[idx] = malloc(size + 1);
     strncpy(split_on_newlines[idx], input_buffer + last_newline_idx_plus_1,
             size);
