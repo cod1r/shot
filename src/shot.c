@@ -71,7 +71,6 @@ int32_t **construct_boyer_moore_bad_character_table(char *pattern,
   return table;
 }
 int32_t boyer_moore_string_search(int32_t **boyer_moore_table_bad_character,
-                                  int32_t row_length, int32_t columns_length,
                                   char *pattern, int32_t pattern_length,
                                   char *text, int32_t text_length) {
   if (pattern_length == 0)
@@ -186,7 +185,7 @@ void process(char *written, int32_t *written_length) {
   char *new_written = malloc(*written_length);
   int32_t new_written_length = 0;
   for (int32_t idx = 0; idx < *written_length; ++idx) {
-    if (written[idx] >= 32 && written[idx] <= 127) {
+    if (written[idx] >= 32) {
       new_written[new_written_length++] = written[idx];
     }
   }
@@ -218,7 +217,7 @@ char *format_str =
     "\0338"    // Moving cursor back to saved position
     ;
 void update_match_print(char *results, char **split_on_newlines,
-                        int32_t split_on_newlines_length, char *written,
+                        char *written,
                         int32_t written_length, int32_t *matches,
                         int32_t tab_index, int32_t lines_count,
                         int32_t found_amt, int32_t max_width_length_of_line) {
@@ -277,7 +276,6 @@ void *poll_for_window_changes(void *arg) {
 }
 void shotgun(char **split_on_newlines, int32_t split_on_newlines_length) {
   struct termios term_settings_old = set_up_terminal();
-
   int32_t max_length_of_entries = 0;
   for (int32_t idx = 0; idx < split_on_newlines_length; ++idx) {
     max_length_of_entries =
@@ -292,7 +290,6 @@ void shotgun(char **split_on_newlines, int32_t split_on_newlines_length) {
     dprintf(STDERR_FILENO, "\033[?1049lioctl has failed");
     exit(EXIT_FAILURE);
   }
-
   int32_t lines_count = min(winfo.ws_row - 2, split_on_newlines_length);
   struct window_changes_info wc;
   int32_t cancel_thread = 0;
@@ -313,9 +310,9 @@ void shotgun(char **split_on_newlines, int32_t split_on_newlines_length) {
   written[0] = 0;
   int32_t **boyer_moore_bad_character_table = NULL;
   int32_t *matches = malloc(split_on_newlines_length * sizeof(int32_t));
-  int32_t found_amt = 0;
+  int32_t found_amt = lines_count;
   while (1) {
-    update_match_print(results, split_on_newlines, split_on_newlines_length,
+    update_match_print(results, split_on_newlines,
                        written, length, matches, tab_index, lines_count,
                        found_amt, winfo.ws_col);
     int32_t r = read(STDIN_FILENO, written + length, capacity - length);
@@ -337,7 +334,7 @@ void shotgun(char **split_on_newlines, int32_t split_on_newlines_length) {
           int32_t current_line_in_results = 0;
           int32_t prev_newline_index = 0;
           int32_t end_of_result_idx = 0;
-          for (int32_t i = 0; i < strlen(results); ++i) {
+          for (int32_t i = 0; i < (int32_t)strlen(results); ++i) {
             if (results[i] == '\n') {
               prev_newline_index = i;
               current_line_in_results++;
@@ -347,7 +344,7 @@ void shotgun(char **split_on_newlines, int32_t split_on_newlines_length) {
             }
           }
           end_of_result_idx = prev_newline_index + 1;
-          while (end_of_result_idx < strlen(results) &&
+          while (end_of_result_idx < (int32_t)strlen(results) &&
                  results[end_of_result_idx] != '\n') {
             end_of_result_idx++;
           }
@@ -395,7 +392,7 @@ void shotgun(char **split_on_newlines, int32_t split_on_newlines_length) {
     for (int32_t split_idx = 0; split_idx < split_on_newlines_length;
          ++split_idx) {
       int32_t found = boyer_moore_string_search(
-          boyer_moore_bad_character_table, ALPHABET_LEN, length, written,
+          boyer_moore_bad_character_table, written,
           length, split_on_newlines[split_idx],
           strlen(split_on_newlines[split_idx]));
       if (found != -1) {
