@@ -322,6 +322,11 @@ void shotgun(char **split_on_newlines, int32_t split_on_newlines_length) {
       if (written[idx] == 3) {
         dprintf(STDERR_FILENO, "\033[?1049l");
         reset_terminal(term_settings_old);
+        cancel_thread = 1;
+        if (pthread_cancel(thread) != 0) {
+          dprintf(STDERR_FILENO, "pthread_cancel failed");
+          exit(EXIT_FAILURE);
+        }
         return;
       }
       if (written[idx] == '\t' || written[idx] == '\n') {
