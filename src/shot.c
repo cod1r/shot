@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -7,10 +8,11 @@
 #include <termios.h>
 #include <unistd.h>
 
-#define DEBUG(X, F)                                                            \
-  int fd = open("log.txt", O_RDWR | O_APPEND | O_CREAT);                       \
-  dprintf(fd, F, X);                                                           \
-  close(fd);
+#define DEBUG(X, F, FILENAME)                                                   \
+  {int fd = open(FILENAME, O_RDWR | O_APPEND | O_CREAT);                        \
+  if (fd == -1) exit(EXIT_FAILURE);                                             \
+  dprintf(fd, F, X);                                                            \
+  close(fd);}
 
 // We are only allowing ascii characters for now.
 // Unicode is a pain
@@ -225,7 +227,7 @@ void update_match_print(char *results, char **split_on_newlines,
   int32_t found_counter = 0;
   if (found_amt < lines_count)
     tab_index %= found_amt;
-  for (int32_t idx = 0; idx < lines_count; ++idx) {
+  for (int32_t idx = 0; idx < split_on_newlines_length; ++idx) {
     // if nothing is written, all entries should be printed
     // if something is written, some or all entries could be skipped
     if (matches[idx] == -1 && written_length > 0)
@@ -244,6 +246,7 @@ void update_match_print(char *results, char **split_on_newlines,
     results[currn_idx] = '\n';
     currn_idx += 1;
     found_counter += 1;
+    if (found_counter == lines_count) break;
   }
   results[currn_idx] = 0;
   dprintf(STDERR_FILENO, format_str, written, results, lines_count);
