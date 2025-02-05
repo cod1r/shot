@@ -20,7 +20,7 @@ const int32_t MIN_ALPHABET_VALUE = 32;
 const int32_t MAX_ALPHABET_VALUE = 126;
 const int32_t ALPHABET_LEN = 126 - 32 + 1;
 
-struct termios set_up_terminal() {
+struct termios set_up_terminal(void) {
   if (freopen("/dev/tty", "r", stdin) == NULL) {
     fprintf(stderr, "freopen failed");
     exit(EXIT_FAILURE);
@@ -219,7 +219,7 @@ char *format_str =
     "\0338"    // Moving cursor back to saved position
     ;
 void update_match_print(char *results, char **split_on_newlines,
-                        char *written,
+                        int32_t split_on_newlines_length, char *written,
                         int32_t written_length, int32_t *matches,
                         int32_t tab_index, int32_t lines_count,
                         int32_t found_amt, int32_t max_width_length_of_line) {
@@ -315,7 +315,7 @@ void shotgun(char **split_on_newlines, int32_t split_on_newlines_length) {
   int32_t *matches = malloc(split_on_newlines_length * sizeof(int32_t));
   int32_t found_amt = lines_count;
   while (1) {
-    update_match_print(results, split_on_newlines,
+    update_match_print(results, split_on_newlines, split_on_newlines_length,
                        written, length, matches, tab_index, lines_count,
                        found_amt, winfo.ws_col);
     int32_t r = read(STDIN_FILENO, written + length, capacity - length);
@@ -414,7 +414,7 @@ void shotgun(char **split_on_newlines, int32_t split_on_newlines_length) {
     if (found_amt == 0) found_amt = lines_count;
   }
 }
-int32_t main() {
+int32_t main(void) {
   int32_t input_buffer_capacity = 65535;
   int32_t input_buffer_length = 0;
   char *input_buffer = malloc(input_buffer_capacity);
